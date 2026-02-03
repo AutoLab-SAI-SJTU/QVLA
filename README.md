@@ -22,9 +22,7 @@
         <br>
         <sup>5</sup>Terminal Technology Department, Alipay, Ant Group
     </p>
-    <p>
-        <a href="https://github.com/AutoLab-SAI-SJTU/QVLA">Code</a> · <code>git@github.com:AutoLab-SAI-SJTU/QVLA.git</code>
-    </p>
+
 </div>
 
 QVLA provides a quantization workflow for VLA models, including
