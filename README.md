@@ -60,7 +60,7 @@ This translates to a 22.6% performance improvement over SmoothQuant.
 - Excludes `projector.*`, `action_head`, and `language_model.lm_head`.
 
 ## Figure
-
+Sensitivity Analysis
 ![Sensitivity Analysis](assets/motivation.png)
 
 ## Repository Layout
