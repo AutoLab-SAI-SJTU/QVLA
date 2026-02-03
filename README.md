@@ -29,7 +29,11 @@ QVLA provides a quantization workflow for VLA models, including
 proxy sensitivity estimation, greedy gate assignment, and quantization for evaluation or checkpoint export.
 
 
-## Abstract
+## 📰 News
+
+- [Jan 26, 2026] Accepted to ICLR 2026.
+
+## 📖 Abstract
 
 The advent of Vision-Language-Action (VLA) models represents a significant leap
 for embodied intelligence, yet their immense computational demands critically
@@ -53,22 +57,22 @@ OpenVLA-OFT with QVLA requires only 29.2% of the original model's VRAM while
 maintaining 98.9% of its original performance and achieving a 1.49x speedup.
 This translates to a 22.6% performance improvement over SmoothQuant.
 
-## Highlights
+## ✨ Highlights
 
 - Channel-wise gates over `{0,2,4,8,16}` with a target global average bit-width.
 - Works on `language_model.*` and `vision_backbone.*` Linear/Conv2d layers.
 - Excludes `projector.*`, `action_head`, and `language_model.lm_head`.
 
-## Figure
+## 🖼️ Figure
 Sensitivity Analysis
 ![Sensitivity Analysis](assets/motivation.png)
 
-## Repository Layout
+## 📁 Repository Layout
 
 - `openvla/` OpenVLA source code and dependencies
 - `openvla/qvla/` QVLA workflow scripts
 
-## Installation
+## ⚙️ Installation
 
 The examples below use OpenVLA as the backend.
 
@@ -93,7 +97,7 @@ ninja --version; echo $?  # should return exit code 0
 pip install "flash-attn==2.5.5" --no-build-isolation
 ```
 
-## Usage
+## 🚀 Usage
 
 All commands below are run from the repository root.
 
@@ -141,7 +145,7 @@ python openvla/qvla/run_eval_with_qvla_fakew.py \
   --local_log_dir out/rollouts_qvla
 ```
 
-## Outputs
+## 📦 Outputs
 
 - `out/proxy.pt`: per-layer `proxy_{b}` tensors
 - `out/greedy_bits.json`: channel-wise gate assignment
@@ -149,7 +153,7 @@ python openvla/qvla/run_eval_with_qvla_fakew.py \
 - `out/rollouts_qvla/`: evaluation logs
 
 
-## Citation
+## 📚 Citation
 
 ```bibtex
 @inproceedings{xu2026qvla,
