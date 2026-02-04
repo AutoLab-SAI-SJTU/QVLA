@@ -1,5 +1,7 @@
 # QVLA: Not All Channels Are Equal in Vision-Language-Action Model's Quantization
 
+[![arXiv](https://img.shields.io/badge/arXiv-2602.03782-b31b1b.svg)](https://arxiv.org/abs/2602.03782)
+
 <div align="center">
     <p>
         <a>Yuhao Xu</a><sup>1</sup>&nbsp;&nbsp;
