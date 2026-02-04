@@ -23,10 +23,6 @@
         <sup>5</sup>Terminal Technology Department, Alipay, Ant Group
     </p>
 
-    <p>
-        <a href="https://arxiv.org/abs/2602.03782"><img src="https://img.shields.io/badge/arXiv-2602.03782-B31B1B.svg" alt="arXiv"></a>
-        <a href="https://your-project-link.com"><img src="https://img.shields.io/badge/Project-Page-green" alt="Project"></a>
-    </p>
 </div>
 
 ---
