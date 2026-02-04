@@ -23,11 +23,16 @@
         <sup>5</sup>Terminal Technology Department, Alipay, Ant Group
     </p>
 
+    <p align="center">
+        <a href="https://arxiv.org/abs/2602.03782">
+            <img src="https://img.shields.io/badge/arXiv-2602.03782-b31b1b.svg" alt="arXiv">
+        </a>
+    </p>
 </div>
 
-QVLA provides a quantization workflow for VLA models, including
-proxy sensitivity estimation, greedy gate assignment, and quantization for evaluation or checkpoint export.
-
+<p align="center">
+    
+QVLA provides a quantization workflow for VLA models, including proxy sensitivity estimation, greedy gate assignment, and quantization for evaluation or checkpoint export.
 
 ## 📰 News
 
