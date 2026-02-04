@@ -24,7 +24,11 @@
     </p>
 </div>
 
-[![arXiv](https://img.shields.io/badge/arXiv-2602.03782-b31b1b.svg)](https://arxiv.org/abs/2602.03782)
+<p align="center">
+  <a href="https://arxiv.org/abs/2602.03782">
+    <img src="https://img.shields.io/badge/arXiv-2602.03782-b31b1b.svg" alt="arXiv">
+  </a>
+</p>
 
 
 
@@ -158,10 +162,13 @@ python openvla/qvla/run_eval_with_qvla_fakew.py \
 ## 📚 Citation
 
 ```bibtex
-@inproceedings{xu2026qvla,
-  title     = {QVLA: Not All Channels Are Equal in Vision-Language-Action Model's Quantization},
-  author    = {Xu, Yuhao and Yang, Yantai and Fan, Zhenyang and Liu, Yufan and Li, Yuming and Li, Bing and Zhang, Zhipeng},
-  booktitle = {International Conference on Learning Representations},
-  year      = {2026}
+@misc{xu2026qvlachannelsequalvisionlanguageaction,
+      title={QVLA: Not All Channels Are Equal in Vision-Language-Action Model's Quantization}, 
+      author={Yuhao Xu and Yantai Yang and Zhenyang Fan and Yufan Liu and Yuming Li and Bing Li and Zhipeng Zhang},
+      year={2026},
+      eprint={2602.03782},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2602.03782}, 
 }
 ```
