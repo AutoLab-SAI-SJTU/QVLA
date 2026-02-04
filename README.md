@@ -25,7 +25,7 @@
 
     <p align="center">
         <a href="https://arxiv.org/abs/2602.03782">
-            <img src="https://img.shields.io/badge/arXiv-2602.03782-b31b1b.svg" alt="arXiv">
+            <img src="https://img.shields.io/badge/arXiv-2602.03782-B31B1B.svg" title="arXiv Link" alt="arXiv">
         </a>
     </p>
 </div>
@@ -33,7 +33,6 @@
 <p align="center">
     
 QVLA provides a quantization workflow for VLA models, including proxy sensitivity estimation, greedy gate assignment, and quantization for evaluation or checkpoint export.
-
 ## 📰 News
 
 - [Jan 26, 2026] Accepted to ICLR 2026.
