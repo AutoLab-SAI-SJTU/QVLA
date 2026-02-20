@@ -248,7 +248,42 @@ def convert_openvla_weights_to_hf(cfg: HFConvertConfig) -> None:
     output_dataset_statistics_json = cfg.output_hf_model_local_path / "dataset_statistics.json"
     shutil.copyfile(dataset_statistics_json, output_dataset_statistics_json)
 
+    # ── Inject auto_map + copy custom code files ────────────────────────────────
+    # Without this, AutoProcessor.from_pretrained(trust_remote_code=True) falls
+    # back to LlamaTokenizerFast instead of loading PrismaticProcessor.
+    print("[*] Injecting auto_map into config files & copying custom code files")
+
+    # 1) config.json
+    cfg_json_path = cfg.output_hf_model_local_path / "config.json"
+    with open(cfg_json_path) as f:
+        cfg_json = json.load(f)
+    cfg_json["auto_map"] = {
+        "AutoConfig": "configuration_prismatic.OpenVLAConfig",
+        "AutoModelForVision2Seq": "modeling_prismatic.OpenVLAForActionPrediction",
+        "AutoProcessor": "processing_prismatic.PrismaticProcessor",
+    }
+    with open(cfg_json_path, "w") as f:
+        json.dump(cfg_json, f, indent=2)
+
+    # 2) preprocessor_config.json
+    prep_json_path = cfg.output_hf_model_local_path / "preprocessor_config.json"
+    with open(prep_json_path) as f:
+        prep_json = json.load(f)
+    prep_json["auto_map"] = {
+        "AutoImageProcessor": "processing_prismatic.PrismaticImageProcessor",
+        "AutoProcessor": "processing_prismatic.PrismaticProcessor",
+    }
+    with open(prep_json_path, "w") as f:
+        json.dump(prep_json, f, indent=2)
+
+    # 3) Copy Python source files needed for trust_remote_code
+    hf_src = Path(__file__).parent.parent.parent / "prismatic" / "extern" / "hf"
+    for fname in ["configuration_prismatic.py", "modeling_prismatic.py", "processing_prismatic.py"]:
+        shutil.copy(hf_src / fname, cfg.output_hf_model_local_path / fname)
+    # ────────────────────────────────────────────────────────────────────────────
+
     print(f"[*] Saving Complete! Saved converted checkpoint to: {cfg.output_hf_model_local_path}")
+
 
     #####################################################################################
     # Optional: Push Model to Hugging Face Hub
