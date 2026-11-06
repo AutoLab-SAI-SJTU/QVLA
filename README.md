@@ -86,56 +86,150 @@ Sensitivity Analysis
 - `docs/weight_only.md` Setup, method scope, recipes and artifact contracts
 - `UniVLA/` UniVLA source and its backend-specific QVLA scripts
 
-## ⚙️ Installation
+## 🚀 Reproduce the Spatial weight-only workflow
 
-OpenVLA uses stock causal Transformers 4.40.1; OpenVLA-OFT uses the author's
-pinned bidirectional fork. Install each backend in its own Python 3.10
-environment. See the [setup and method guide](docs/weight_only.md).
+Start with the [complete step-by-step guide](docs/weight_only.md#start-here).
+It includes copyable environment, LIBERO config, model/data download, startup,
+full-evaluation and result-verification commands. The steps below summarize the
+order and show all four full-evaluation configurations.
 
-## 🚀 Weight-only usage
+### 1. Fetch this implementation
 
-Run from the repository root after preparing a matching merged checkpoint,
-Hugging Face modified LIBERO RLDS training data, and a private LIBERO config:
+These scripts are currently delivered in [PR #9](https://github.com/AutoLab-SAI-SJTU/QVLA/pull/9).
+Until it is merged, fetching only `main` gives the earlier implementation:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python scripts/run_qvla.py \
-  --backend openvla --python /path/to/causal-env/bin/python \
-  --checkpoint /path/to/openvla_checkpoint \
-  --rlds-root /path/to/modified_libero_rlds \
-  --target-avg-bits 8 --max-samples 512 --trials 50 --seed 7 \
-  --output-root out/openvla_w8 --action run
+git clone https://github.com/AutoLab-SAI-SJTU/QVLA.git
+cd QVLA
+git fetch origin pull/9/head
+git checkout --detach FETCH_HEAD
+export QVLA_ROOT="$PWD"
+export OPENVLA_PYTHON="$QVLA_ROOT/.venv-openvla/bin/python"
+export OFT_PYTHON="$QVLA_ROOT/.venv-oft/bin/python"
 ```
 
-For OFT select `--backend openvla-oft`, its own Python environment and merged
-checkpoint. Use target 4 for W4A16. Both routes use a shared standalone stage
-interface; their numerical implementations and environment checks are separate.
-OpenVLA W8 evaluates with causal FlashAttention 2.5.5; W4 uses causal SDPA.
-OFT uses bidirectional SDPA for both precisions. Activations and operators remain
-BF16, so these fake-weight paths do not provide packed integer speedups.
+### 2. Install the selected backend and LIBERO
 
-The default 512 calibration records come from distinct training trajectories
-across four LIBERO suites. OpenVLA uses a soft-action directional surrogate;
-OFT differentiates its native continuous action chunk. Local recipe choices and
-unreproduced paper stages are documented explicitly in the guide.
+Follow [backend installation](docs/weight_only.md#install-the-selected-backend)
+and [LIBERO/headless setup](docs/weight_only.md#set-up-libero-and-headless-simulation).
+Use Python 3.10 and PyTorch 2.2.0. OpenVLA and OFT require separate environments:
+causal Transformers 4.40.1 versus the pinned author's bidirectional fork.
+OpenVLA W8 additionally requires FlashAttention 2.5.5.
 
-`--action plan|build_calib|proxy|assign|eval|export|run|result` selects a stage.
-`--trials 1` is a startup check, 10 is a 100-episode protocol, and 50 is the full
-500-episode Spatial protocol. Use a fresh output directory for each run.
+The guide clones a pinned LIBERO revision, installs it into the selected
+backend environment(s), and creates a private `LIBERO_CONFIG_PATH`. It also sets
+`LIBERO_ROOT`, `MUJOCO_GL=osmesa`, and `PYOPENGL_PLATFORM=osmesa`.
 
-## 📦 Outputs and validation
+### 3. Download the checkpoint and training data
 
-- Calibration records, sensitivity tensors and channel assignments live under
-  `calib/`, `proxy/` and `gates/` in the selected output root.
-- Verified evaluation writes `merged_summary.json`/`.md`, with canonical logs,
-  metadata and videos under `logs/eval/`. Runtime faults abort evaluation.
-- Stage manifests reject stale or unverified artifacts. Gate names, lengths,
-  bit choices and pruning caps are checked before weight mutation.
-- Optional export writes a full BF16 checkpoint with injected fake weights.
-- Separate CPU test environments cover both backends and the standalone runner.
+Follow the [pinned download commands](docs/weight_only.md#download-local-checkpoints-and-calibration-data).
+The examples use these paths under the repository root:
+
+| Asset | Local path |
+| --- | --- |
+| Merged OpenVLA Spatial checkpoint | `models/openvla_spatial/` |
+| Merged OFT Spatial checkpoint, with action/proprio heads | `models/oft_spatial/` |
+| Hugging Face `openvla/modified_libero_rlds`, all four suites | `data/modified_libero_rlds/` |
+
+Existing local files can be used by changing the paths in the commands. The four
+RLDS training suites are required even when evaluating only Spatial. LIBERO's
+simulation assets and default initial states are also required; RLDS data alone
+is insufficient for robot rollouts.
+
+### 4. Check startup
+
+The [startup command](docs/weight_only.md#check-startup-before-full-evaluation)
+uses eight training frames and one trial per task in a separate output root.
+Use it to check setup before a 512-frame calibration and full evaluation.
+Its ten episodes are a startup check, not a full Spatial SR measurement.
+
+### 5. Run W4A16 or W8A16
+
+Run the selected configuration from the repository root, in the same shell as
+the setup variables. Each command uses one visible GPU, 512 training calibration
+trajectories, the Spatial suite, 50 trials per task and seed 7. The default
+attention, pruning cap and OpenVLA W8 repair settings are selected automatically.
+Use a fresh output root for each run.
+
+**OpenVLA W4A16:**
+
+```bash
+CUDA_VISIBLE_DEVICES=0 "$OPENVLA_PYTHON" scripts/run_qvla.py \
+  --backend openvla --checkpoint "$QVLA_ROOT/models/openvla_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 4 \
+  --max-samples 512 --trials 50 --seed 7 \
+  --output-root "$QVLA_ROOT/out/openvla_w4" --action run
+```
+
+**OpenVLA W8A16:**
+
+```bash
+CUDA_VISIBLE_DEVICES=0 "$OPENVLA_PYTHON" scripts/run_qvla.py \
+  --backend openvla --checkpoint "$QVLA_ROOT/models/openvla_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 8 \
+  --max-samples 512 --trials 50 --seed 7 \
+  --output-root "$QVLA_ROOT/out/openvla_w8" --action run
+```
+
+**OpenVLA-OFT W4A16:**
+
+```bash
+CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
+  --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 4 \
+  --max-samples 512 --trials 50 --seed 7 \
+  --output-root "$QVLA_ROOT/out/oft_w4" --action run
+```
+
+**OpenVLA-OFT W8A16:**
+
+```bash
+CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
+  --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 8 \
+  --max-samples 512 --trials 50 --seed 7 \
+  --output-root "$QVLA_ROOT/out/oft_w8" --action run
+```
+
+`--trials 1` gives 10 episodes, `--trials 10` gives 100, and `--trials 50` gives
+500. Only the last is the full Spatial protocol documented here. Do not compare
+success rates from different episode counts as the same experiment.
+
+## 📦 Read and verify the result
+
+For example, after the OFT W8 run:
+
+```bash
+"$OFT_PYTHON" scripts/run_qvla.py --backend openvla-oft \
+  --action result --output-root "$QVLA_ROOT/out/oft_w8"
+"$OFT_PYTHON" openvla-oft/qvla/verify_eval.py \
+  --run_dir "$QVLA_ROOT/out/oft_w8/logs/eval"
+```
+
+`merged_summary.json` reports `total_episodes`, `total_successes` and
+`total_success_rate` (a fraction, multiplied by 100 for percent). A full Spatial
+run must contain **500 episodes**, and independent log verification must report
+`status: passed`. Use the matching backend/output directory for the other runs.
+Runtime exceptions or incomplete logs are not valid SR measurements. See
+[result verification](docs/weight_only.md#verify-the-result) and
+[staged runs/exact input selection](docs/weight_only.md#staged-runs-and-exact-input-selection).
+
+Calibration records, scores and assignments live under `calib/`, `proxy/` and
+`gates/`; per-run metadata/logs/videos live under `logs/eval/`. Stage manifests
+reject stale artifacts. Optional export writes a full BF16 fake-weight checkpoint.
+The workflow uses BF16 activations/operators and does not provide packed integer
+speedups. Method definitions and unreproduced paper stages are stated in the
+[recipe/scope guide](docs/weight_only.md#recipes).
 
 This update includes code and configuration only. Current experiment results,
-weights, datasets, calibration files, scores, gates, logs and videos are not
-bundled. The headline paper results above retain their original paper context.
+weights, datasets, calibration records, scores, gates, logs and videos are not
+bundled. The headline paper results above retain their original paper context;
+these instructions reproduce the released workflow rather than guarantee every
+paper SR. Separate CPU test environments cover both backends and the stage runner.
 
 ## 📚 Citation
 

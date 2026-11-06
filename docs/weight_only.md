@@ -5,6 +5,30 @@ implementations live in `openvla/qvla` and `openvla-oft/qvla`. The repository-lo
 `scripts/run_qvla.py` prepares training records, calibrates, allocates and evaluates
 without requiring a separate integration repository.
 
+## Start here
+
+Follow the sections in order: fetch this implementation, install the selected
+backend, set up LIBERO, download checkpoints/training data, run a startup check,
+then launch the full Spatial evaluation and verify its output. All shell blocks
+below run from the repository root unless a working directory is stated.
+
+This implementation is currently delivered through [PR #9](https://github.com/AutoLab-SAI-SJTU/QVLA/pull/9).
+Until it is merged, cloning only `main` does not include these scripts:
+
+```bash
+git clone https://github.com/AutoLab-SAI-SJTU/QVLA.git
+cd QVLA
+git fetch origin pull/9/head
+git checkout --detach FETCH_HEAD
+export QVLA_ROOT="$PWD"
+export OPENVLA_PYTHON="$QVLA_ROOT/.venv-openvla/bin/python"
+export OFT_PYTHON="$QVLA_ROOT/.venv-oft/bin/python"
+git rev-parse HEAD
+```
+
+Keep the printed source revision and generated manifests with the run. Use the
+same shell for the following environment variables and commands.
+
 ## Recipes
 
 | Backend | Mean weight bits | Calibration attention | Evaluation attention | Pruning repair |
@@ -45,6 +69,7 @@ python -m pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 \
   --index-url https://download.pytorch.org/whl/cu118
 python -m pip install -e openvla
 python -m pip install -r openvla/qvla/requirements.txt
+python -m pip install wheel packaging psutil ninja
 python -m pip install flash-attn==2.5.5 --no-build-isolation
 ```
 
@@ -63,21 +88,116 @@ FlashAttention is required only for the default OpenVLA W8 evaluator. An existin
 The current interpreter is used by default; `--python /path/to/env/bin/python`
 selects the matching backend environment without resolving away venv identity.
 
-Install LIBERO at `8f1084e3132a39270c3a13ebe37270a43ece2a01`, robosuite 1.4.1,
-MuJoCo 2.3.7, ffmpeg and the system OSMesa library. Set `LIBERO_ROOT`, a private
-`LIBERO_CONFIG_PATH`, `MUJOCO_GL=osmesa`, and `PYOPENGL_PLATFORM=osmesa`.
-The [OFT setup guide](../openvla-oft/qvla/README.md#installation) includes LIBERO
-asset and private-config instructions; keep each backend's own Python dependencies.
+## Set up LIBERO and headless simulation
 
-## Local checkpoints and calibration data
+Install the system OSMesa/OpenGL libraries and ffmpeg. For Debian/Ubuntu:
 
-Download the merged backend checkpoint and `openvla/modified_libero_rlds` from
-Hugging Face. The RLDS root contains
-`libero_{spatial,object,goal,10}_no_noops/1.0.0/` training datasets. Use
-`openvla/openvla-7b-finetuned-libero-spatial` for OpenVLA, or
-`moojink/openvla-7b-oft-finetuned-libero-spatial` for OFT. OFT additionally needs
-its continuous action head and proprio projector; adapter-only weights are
-insufficient. The OFT guide pins the checkpoint revision used by this route.
+```bash
+sudo apt-get update
+sudo apt-get install -y libosmesa6 libgl1 ffmpeg
+```
+
+Clone the pinned LIBERO source into a locally ignored directory:
+
+```bash
+mkdir -p openvla-oft/third_party
+git clone https://github.com/Lifelong-Robot-Learning/LIBERO.git openvla-oft/third_party/LIBERO
+git -C openvla-oft/third_party/LIBERO checkout 8f1084e3132a39270c3a13ebe37270a43ece2a01
+export LIBERO_ROOT="$QVLA_ROOT/openvla-oft/third_party/LIBERO"
+```
+
+Install that same LIBERO source into each backend environment you created:
+
+```bash
+"$OPENVLA_PYTHON" -m pip install -e "$LIBERO_ROOT"
+"$OFT_PYTHON" -m pip install -e "$LIBERO_ROOT"
+```
+
+If you installed only one backend, run only its installation command. The QVLA
+requirements pin robosuite 1.4.1 and MuJoCo 2.3.7. Create a private LIBERO config
+**before importing LIBERO**; it points to the checkout's assets and fixed default
+initial states rather than another project's configuration:
+
+```bash
+export LIBERO_CONFIG_PATH="$QVLA_ROOT/out/libero_config"
+export MUJOCO_GL=osmesa
+export PYOPENGL_PLATFORM=osmesa
+export OMP_NUM_THREADS=4
+export TOKENIZERS_PARALLELISM=false
+export WANDB_MODE=disabled
+python3 - <<'PYCONFIG'
+import json
+import os
+from pathlib import Path
+source = Path(os.environ["LIBERO_ROOT"]) / "libero/libero"
+config = Path(os.environ["LIBERO_CONFIG_PATH"])
+config.mkdir(parents=True, exist_ok=True)
+datasets = source.parent / "datasets"
+datasets.mkdir(exist_ok=True)
+paths = {"benchmark_root": source, "bddl_files": source / "bddl_files",
+         "init_states": source / "init_files", "assets": source / "assets",
+         "datasets": datasets}
+for key in ("bddl_files", "init_states", "assets"):
+    if not paths[key].is_dir():
+        raise RuntimeError(f"Missing LIBERO resource: {paths[key]}")
+(config / "config.yaml").write_text(json.dumps({key: str(value) for key, value in paths.items()}, indent=2) + "\n")
+PYCONFIG
+```
+
+The LIBERO simulation assets/default initial states and RLDS training data serve
+different purposes. Calibration uses the training data below; robot evaluation
+uses the pinned LIBERO benchmark and its default initial states.
+
+## Download local checkpoints and calibration data
+
+Existing local assets can be selected through `--checkpoint` and `--rlds-root`;
+downloads are needed only when you do not already have the matching assets.
+Use the Python environment of a backend you installed for the downloads. The
+following example uses the causal environment; replace the executable with
+`"$OFT_PYTHON"` if you installed only OFT. Download only the model(s) you need:
+
+```bash
+export QVLA_DOWNLOAD_PYTHON="$OPENVLA_PYTHON"
+"$QVLA_DOWNLOAD_PYTHON" - <<'PYDOWNLOAD'
+import os
+from pathlib import Path
+from huggingface_hub import snapshot_download
+root = Path(os.environ["QVLA_ROOT"])
+# OpenVLA Spatial. Omit this call when evaluating only OFT.
+snapshot_download(
+    repo_id="openvla/openvla-7b-finetuned-libero-spatial",
+    revision="962318cec55ac10993ff0f5f43eda9a270b4c873",
+    local_dir=str(root / "models/openvla_spatial"),
+)
+# Merged OFT Spatial, including the L1 action head and proprio projector.
+# Omit this call when evaluating only causal OpenVLA.
+snapshot_download(
+    repo_id="moojink/openvla-7b-oft-finetuned-libero-spatial",
+    revision="6d0231af0e48c5985f1ff86908f4674b84bc049b",
+    local_dir=str(root / "models/oft_spatial"),
+    ignore_patterns=["adapter/*"],
+)
+# Shared training data: all four suites are needed for default calibration.
+snapshot_download(
+    repo_id="openvla/modified_libero_rlds", repo_type="dataset",
+    revision="6ce6aaaaabdbe590b1eef5cd29c0d33f14a08551",
+    local_dir=str(root / "data/modified_libero_rlds"),
+)
+PYDOWNLOAD
+```
+
+An adapter-only OFT checkpoint is insufficient. Keep checkpoint metadata,
+processor/tokenizer, normalization statistics, action head and proprio projector.
+The expected data layout is:
+
+```text
+data/modified_libero_rlds/
+  libero_spatial_no_noops/1.0.0/dataset_info.json
+  libero_object_no_noops/1.0.0/dataset_info.json
+  libero_goal_no_noops/1.0.0/dataset_info.json
+  libero_10_no_noops/1.0.0/dataset_info.json
+  ... TFRecord shards inside each suite directory
+```
 
 Default calibration selects 512 distinct training trajectories across four
 suites, one frame each. Optional `--calib-indices PATH` fixes a supplied
@@ -98,40 +218,120 @@ Neither route includes unpublished sensitive-channel forward refinement or
 rollout cross-validation. The prompt token and attention mask are extended
 together in OpenVLA. Earlier rollout scores must be revalidated after this fix.
 
-## Run W4A16 or W8A16
+## Check startup before full evaluation
 
-From the repository root, choose one visible GPU and a fresh output directory:
+Use a fresh output root for a startup check with eight calibration samples and
+one trial per task. It exercises the complete preparation/calibration/allocation/
+evaluation path; its ten episodes are not the full Spatial protocol:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python scripts/run_qvla.py \
-  --backend openvla --python /path/to/causal-env/bin/python \
-  --checkpoint /path/to/openvla-7b-finetuned-libero-spatial \
-  --rlds-root /path/to/modified_libero_rlds \
-  --target-avg-bits 8 --max-samples 512 --trials 50 --seed 7 \
-  --output-root out/openvla_w8 --action run
-
-CUDA_VISIBLE_DEVICES=0 python scripts/run_qvla.py \
-  --backend openvla-oft --python /path/to/oft-env/bin/python \
-  --checkpoint /path/to/openvla-7b-oft-finetuned-libero-spatial \
-  --rlds-root /path/to/modified_libero_rlds \
-  --target-avg-bits 8 --max-samples 512 --trials 50 --seed 7 \
-  --output-root out/oft_w8 --action run
+CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
+  --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 8 \
+  --max-samples 8 --trials 1 --seed 7 \
+  --output-root "$QVLA_ROOT/out/oft_startup" --action run
 ```
 
-Use `--target-avg-bits 4` and a new output for W4A16. `--trials 1` is a ten-task
-startup check; `--trials 10` runs 100 episodes; `--trials 50` runs 500 episodes.
-These protocols must be reported separately. No new experimental outcomes are
-bundled with this code release.
+For causal OpenVLA, use its Python, backend and checkpoint. This is optional and
+has a separate output directory; full evaluation below recalibrates 512 samples.
+If you reuse this example, select a fresh directory instead of overwriting a run.
 
-`--action plan` prints the resolved recipe without loading models or writing an
-output directory. Individual `build_calib`, `proxy`, `assign`, `eval`, `export`
-and `result` actions use the same arguments/output root. For a startup check,
-use `--max-samples 8 --trials 1` from data preparation onward. An independent
-evaluation can use `--action eval --gates_path PATH` with a fresh output root.
-`--attention` and `--calibration-attention` explicitly select attention;
+## Run the four Spatial weight-only configurations
+
+Choose one visible GPU. Run the configuration(s) you need; the commands below
+are sequential, with a separate output directory for each. They fix the suite,
+512 training trajectories, 50 trials per task and seed 7. The launcher selects
+the attention and pruning-repair recipe from the table automatically.
+
+**OpenVLA W4A16:**
+
+```bash
+CUDA_VISIBLE_DEVICES=0 "$OPENVLA_PYTHON" scripts/run_qvla.py \
+  --backend openvla --checkpoint "$QVLA_ROOT/models/openvla_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 4 \
+  --max-samples 512 --trials 50 --seed 7 \
+  --output-root "$QVLA_ROOT/out/openvla_w4" --action run
+```
+
+**OpenVLA W8A16:**
+
+```bash
+CUDA_VISIBLE_DEVICES=0 "$OPENVLA_PYTHON" scripts/run_qvla.py \
+  --backend openvla --checkpoint "$QVLA_ROOT/models/openvla_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 8 \
+  --max-samples 512 --trials 50 --seed 7 \
+  --output-root "$QVLA_ROOT/out/openvla_w8" --action run
+```
+
+**OpenVLA-OFT W4A16:**
+
+```bash
+CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
+  --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 4 \
+  --max-samples 512 --trials 50 --seed 7 \
+  --output-root "$QVLA_ROOT/out/oft_w4" --action run
+```
+
+**OpenVLA-OFT W8A16:**
+
+```bash
+CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
+  --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 8 \
+  --max-samples 512 --trials 50 --seed 7 \
+  --output-root "$QVLA_ROOT/out/oft_w8" --action run
+```
+
+`--trials 1` gives 10 episodes, `--trials 10` gives 100, and `--trials 50` gives
+500. Only the last is the full Spatial protocol documented here. Do not compare
+success rates from different episode counts as the same experiment.
+
+## Verify the result
+
+For an OFT W8 run:
+
+```bash
+"$OFT_PYTHON" scripts/run_qvla.py --backend openvla-oft \
+  --action result --output-root "$QVLA_ROOT/out/oft_w8"
+"$OFT_PYTHON" openvla-oft/qvla/verify_eval.py \
+  --run_dir "$QVLA_ROOT/out/oft_w8/logs/eval"
+```
+
+Use the corresponding backend verifier and output directory for the other three
+configurations. A completed full Spatial run must have 500 episodes and matching
+canonical-log/metadata counters. Read `total_success_rate` in
+`merged_summary.json` (multiply by 100 for percent); independent verification
+must report `status: passed`. Missing/incomplete summaries or runtime exceptions
+are not valid SR measurements. Per-run videos/logs stay under `logs/eval/`.
+No expected SR numbers or local experiment outputs are bundled with this update.
+
+## Staged runs and exact input selection
+
+`--action plan` prints the resolved recipe without loading a model or creating an
+output root. Keep your selected command's other arguments and replace `run` with
+`build_calib`, `proxy`, `assign`, `eval` or `export` to execute one stage. For a
+complete staged run, execute preparation, proxy, allocation and evaluation in that
+order with the same configuration and output root. `result` reads the summary.
+An independent evaluation can use `--action eval --gates_path PATH` with a new
+output root. `--attention` and `--calibration-attention` select explicit attention;
 OFT requires bidirectional SDPA. The old input-Hessian `--max_layers`, `--resume`
-and `--percdamp` flags are rejected. Direct-file/module APIs remain available;
-see the backend guides.
+and `--percdamp` flags are rejected.
+
+The seeded default sampler recreates this release's training selection. To
+reproduce another run's exact frame list, add `--calib-indices /path/to/indices.jsonl`
+and set `--max-samples` to that list's length before preparation. Required fields
+are `suite`, `episode_index` and `step_index`; an optional instruction is checked.
+Keep the resulting manifest, indices and source/environment/checkpoint identities
+with your run. The repository does not ship private local calibration indices or
+unpublished author indices. These steps reproduce the released weight-only
+workflow; they do not claim to reproduce every paper result or omitted refinement
+stage. Direct-file/module APIs are described in the backend guides.
 
 ## Artifacts and checks
 
