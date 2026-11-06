@@ -33,7 +33,10 @@
 
 
 
-QVLA provides a quantization workflow for VLA models, including proxy sensitivity estimation, greedy gate assignment, and quantization for evaluation or checkpoint export.
+QVLA provides action-sensitivity calibration, channel-wise bit allocation, and
+quantization for evaluation or checkpoint export. The standalone OpenVLA and
+OpenVLA-OFT W4A16/W8A16 workflow is documented in
+[the weight-only guide](docs/weight_only.md).
 
 ## 📰 News
 
@@ -65,7 +68,7 @@ This translates to a 22.6% performance improvement over SmoothQuant.
 
 ## ✨ Highlights
 
-- Channel-wise gates over `{0,2,4,8,16}` with a target global average bit-width.
+- OpenVLA/OpenVLA-OFT weight-only routes allocate `{0,4,8,16}` output-channel bits with a default 1% per-layer pruning cap.
 - Works on `language_model.*` and `vision_backbone.*` Linear/Conv2d layers.
 - Excludes `projector.*`, `action_head`, and `language_model.lm_head`.
 
@@ -76,88 +79,63 @@ Sensitivity Analysis
 ## 📁 Repository Layout
 
 - `openvla/` OpenVLA source code and dependencies
-- `openvla/qvla/` QVLA workflow scripts
+- `openvla/qvla/` Causal soft-action calibration, allocation, guarded evaluation and CPU checks
+- `openvla-oft/` OpenVLA-OFT source and pinned bidirectional inference dependencies
+- `openvla-oft/qvla/` Native continuous-action calibration, allocation, guarded evaluation and CPU checks
+- `scripts/run_qvla.py` Standalone stage runner for both weight-only backends
+- `docs/weight_only.md` Setup, method scope, recipes and artifact contracts
+- `UniVLA/` UniVLA source and its backend-specific QVLA scripts
 
 ## ⚙️ Installation
 
-The examples below use OpenVLA as the backend.
+OpenVLA uses stock causal Transformers 4.40.1; OpenVLA-OFT uses the author's
+pinned bidirectional fork. Install each backend in its own Python 3.10
+environment. See the [setup and method guide](docs/weight_only.md).
+
+## 🚀 Weight-only usage
+
+Run from the repository root after preparing a matching merged checkpoint,
+Hugging Face modified LIBERO RLDS training data, and a private LIBERO config:
 
 ```bash
-# Create and activate conda environment
-conda create -n openvla python=3.10 -y
-conda activate openvla
-
-# Install PyTorch. Update CUDA version to match your system.
-conda install pytorch torchvision torchaudio pytorch-cuda=12.4 -c pytorch -c nvidia -y  # UPDATE ME
-
-# Install OpenVLA in editable mode
-pip install -e openvla
-
-# Minimal dependencies for QVLA scripts
-pip install -r openvla/requirements-min.txt
-pip install pillow tqdm
-
-# (Optional) Flash Attention 2 for training
-pip install packaging ninja
-ninja --version; echo $?  # should return exit code 0
-pip install "flash-attn==2.5.5" --no-build-isolation
+CUDA_VISIBLE_DEVICES=0 python scripts/run_qvla.py \
+  --backend openvla --python /path/to/causal-env/bin/python \
+  --checkpoint /path/to/openvla_checkpoint \
+  --rlds-root /path/to/modified_libero_rlds \
+  --target-avg-bits 8 --max-samples 512 --trials 50 --seed 7 \
+  --output-root out/openvla_w8 --action run
 ```
 
-## 🚀 Usage
+For OFT select `--backend openvla-oft`, its own Python environment and merged
+checkpoint. Use target 4 for W4A16. Both routes use a shared standalone stage
+interface; their numerical implementations and environment checks are separate.
+OpenVLA W8 evaluates with causal FlashAttention 2.5.5; W4 uses causal SDPA.
+OFT uses bidirectional SDPA for both precisions. Activations and operators remain
+BF16, so these fake-weight paths do not provide packed integer speedups.
 
-All commands below are run from the repository root.
+The default 512 calibration records come from distinct training trajectories
+across four LIBERO suites. OpenVLA uses a soft-action directional surrogate;
+OFT differentiates its native continuous action chunk. Local recipe choices and
+unreproduced paper stages are documented explicitly in the guide.
 
-### 1) Build proxy sensitivity
+`--action plan|build_calib|proxy|assign|eval|export|run|result` selects a stage.
+`--trials 1` is a startup check, 10 is a 100-episode protocol, and 50 is the full
+500-episode Spatial protocol. Use a fresh output directory for each run.
 
-```bash
-python openvla/qvla/sensitivity_hessian_proxy.py \
-  --pretrained_checkpoint path/to/openvla_checkpoint \
-  --calib_jsonl path/to/calib.jsonl \
-  --out_path out/proxy.pt \
-  --bits 0,2,4,8
-```
+## 📦 Outputs and validation
 
-### 2) Assign gates
+- Calibration records, sensitivity tensors and channel assignments live under
+  `calib/`, `proxy/` and `gates/` in the selected output root.
+- Verified evaluation writes `merged_summary.json`/`.md`, with canonical logs,
+  metadata and videos under `logs/eval/`. Runtime faults abort evaluation.
+- Stage manifests reject stale or unverified artifacts. Gate names, lengths,
+  bit choices and pruning caps are checked before weight mutation.
+- Optional export writes a full BF16 checkpoint with injected fake weights.
+- Separate CPU test environments cover both backends and the standalone runner.
 
-```bash
-python openvla/qvla/assign_gates_from_sensitivity.py \
-  --proxy_pt out/proxy.pt \
-  --bits 0,4,8,16 \
-  --target_avg_bits 8.0 \
-  --out_json out/greedy_bits.json
-```
-
-### 3) Inject weight-only fake quant and save model
-
-```bash
-python openvla/qvla/inject_fake_w.py \
-  --pretrained_checkpoint path/to/openvla_checkpoint \
-  --gates_path out/greedy_bits.json \
-  --out_dir out/openvla_qvla_fakew
-```
-
-### 4) Evaluate on LIBERO
-
-Set `LIBERO_ROOT` to your local LIBERO checkout if needed.
-
-```bash
-export LIBERO_ROOT=path/to/LIBERO
-
-python openvla/qvla/run_eval_with_qvla_fakew.py \
-  --pretrained_checkpoint path/to/openvla_checkpoint \
-  --gates_path out/greedy_bits.json \
-  --task_suite_name libero_spatial \
-  --num_trials_per_task 1 \
-  --local_log_dir out/rollouts_qvla
-```
-
-## 📦 Outputs
-
-- `out/proxy.pt`: per-layer `proxy_{b}` tensors
-- `out/greedy_bits.json`: channel-wise gate assignment
-- `out/openvla_qvla_fakew/`: exported fake-quantized checkpoint
-- `out/rollouts_qvla/`: evaluation logs
-
+This update includes code and configuration only. Current experiment results,
+weights, datasets, calibration files, scores, gates, logs and videos are not
+bundled. The headline paper results above retain their original paper context.
 
 ## 📚 Citation
 
