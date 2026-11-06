@@ -33,7 +33,10 @@
 
 
 
-QVLA provides a quantization workflow for VLA models, including proxy sensitivity estimation, greedy gate assignment, and quantization for evaluation or checkpoint export.
+QVLA provides action-sensitivity calibration, channel-wise bit allocation, and
+quantization for evaluation or checkpoint export. The standalone OpenVLA and
+OpenVLA-OFT W4A16/W8A16 workflow is documented in
+[the weight-only guide](docs/weight_only.md).
 
 ## 📰 News
 
@@ -65,7 +68,7 @@ This translates to a 22.6% performance improvement over SmoothQuant.
 
 ## ✨ Highlights
 
-- Channel-wise gates over `{0,2,4,8,16}` with a target global average bit-width.
+- OpenVLA/OpenVLA-OFT weight-only routes allocate `{0,4,8,16}` output-channel bits with a default 1% per-layer pruning cap.
 - Works on `language_model.*` and `vision_backbone.*` Linear/Conv2d layers.
 - Excludes `projector.*`, `action_head`, and `language_model.lm_head`.
 
@@ -76,88 +79,159 @@ Sensitivity Analysis
 ## 📁 Repository Layout
 
 - `openvla/` OpenVLA source code and dependencies
-- `openvla/qvla/` QVLA workflow scripts
+- `openvla/qvla/` Causal soft-action calibration, allocation, guarded evaluation and CPU checks
+- `openvla-oft/` OpenVLA-OFT source and pinned bidirectional inference dependencies
+- `openvla-oft/qvla/` Native continuous-action calibration, allocation, guarded evaluation and CPU checks
+- `scripts/run_qvla.py` Standalone stage runner for both weight-only backends
+- `docs/weight_only.md` Setup, method scope, recipes and artifact contracts
+- `UniVLA/` UniVLA source and its backend-specific QVLA scripts
 
-## ⚙️ Installation
+## 🚀 Reproduce the Spatial weight-only workflow
 
-The examples below use OpenVLA as the backend.
+Start with the [complete step-by-step guide](docs/weight_only.md#start-here).
+It includes copyable environment, LIBERO config, model/data download, startup,
+full-evaluation and result-verification commands. The steps below summarize the
+order and show all four full-evaluation configurations.
 
-```bash
-# Create and activate conda environment
-conda create -n openvla python=3.10 -y
-conda activate openvla
+### 1. Fetch this implementation
 
-# Install PyTorch. Update CUDA version to match your system.
-conda install pytorch torchvision torchaudio pytorch-cuda=12.4 -c pytorch -c nvidia -y  # UPDATE ME
-
-# Install OpenVLA in editable mode
-pip install -e openvla
-
-# Minimal dependencies for QVLA scripts
-pip install -r openvla/requirements-min.txt
-pip install pillow tqdm
-
-# (Optional) Flash Attention 2 for training
-pip install packaging ninja
-ninja --version; echo $?  # should return exit code 0
-pip install "flash-attn==2.5.5" --no-build-isolation
-```
-
-## 🚀 Usage
-
-All commands below are run from the repository root.
-
-### 1) Build proxy sensitivity
+Clone the `main` branch:
 
 ```bash
-python openvla/qvla/sensitivity_hessian_proxy.py \
-  --pretrained_checkpoint path/to/openvla_checkpoint \
-  --calib_jsonl path/to/calib.jsonl \
-  --out_path out/proxy.pt \
-  --bits 0,2,4,8
+git clone https://github.com/AutoLab-SAI-SJTU/QVLA.git
+cd QVLA
+export QVLA_ROOT="$PWD"
+export OPENVLA_PYTHON="$QVLA_ROOT/.venv-openvla/bin/python"
+export OFT_PYTHON="$QVLA_ROOT/.venv-oft/bin/python"
 ```
 
-### 2) Assign gates
+No seed is fixed by default. A new output root gets a random seed recorded in
+`.qvla_seed.json`; later stages reuse that seed. Optional `--seed N` permits
+replaying a run with its recorded seed.
+
+### 2. Install the selected backend and LIBERO
+
+Follow [backend installation](docs/weight_only.md#install-the-selected-backend)
+and [LIBERO/headless setup](docs/weight_only.md#set-up-libero-and-headless-simulation).
+Use Python 3.10 and PyTorch 2.2.0. OpenVLA and OFT require separate environments:
+causal Transformers 4.40.1 versus the pinned author's bidirectional fork.
+OpenVLA W8 additionally requires FlashAttention 2.5.5.
+
+The guide clones a pinned LIBERO revision, installs it into the selected
+backend environment(s), and creates a private `LIBERO_CONFIG_PATH`. It also sets
+`LIBERO_ROOT`, `MUJOCO_GL=osmesa`, and `PYOPENGL_PLATFORM=osmesa`.
+
+### 3. Download the checkpoint and training data
+
+Follow the [pinned download commands](docs/weight_only.md#download-local-checkpoints-and-calibration-data).
+The examples use these paths under the repository root:
+
+| Asset | Local path |
+| --- | --- |
+| Merged OpenVLA Spatial checkpoint | `models/openvla_spatial/` |
+| Merged OFT Spatial checkpoint, with action/proprio heads | `models/oft_spatial/` |
+| Hugging Face `openvla/modified_libero_rlds`, all four suites | `data/modified_libero_rlds/` |
+
+Existing local files can be used by changing the paths in the commands. The four
+RLDS training suites are required even when evaluating only Spatial. LIBERO's
+simulation assets and default initial states are also required; RLDS data alone
+is insufficient for robot rollouts.
+
+### 4. Check startup
+
+The [startup command](docs/weight_only.md#check-startup-before-full-evaluation)
+uses eight training frames and one trial per task in a separate output root.
+Use it to check setup before a 512-frame calibration and full evaluation.
+Its ten episodes are a startup check, not a full Spatial SR measurement.
+
+### 5. Run W4A16 or W8A16
+
+Run the selected configuration from the repository root, in the same shell as
+the setup variables. Each command uses one visible GPU, 512 training calibration
+trajectories, the Spatial suite, 50 trials per task and an automatically generated
+run seed. The default
+attention, pruning cap and OpenVLA W8 repair settings are selected automatically.
+Use a fresh output root for each run.
+
+**OpenVLA W4A16:**
 
 ```bash
-python openvla/qvla/assign_gates_from_sensitivity.py \
-  --proxy_pt out/proxy.pt \
-  --bits 0,4,8,16 \
-  --target_avg_bits 8.0 \
-  --out_json out/greedy_bits.json
+CUDA_VISIBLE_DEVICES=0 "$OPENVLA_PYTHON" scripts/run_qvla.py \
+  --backend openvla --checkpoint "$QVLA_ROOT/models/openvla_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 4 \
+  --max-samples 512 --trials 50 \
+  --output-root "$QVLA_ROOT/out/openvla_w4" --action run
 ```
 
-### 3) Inject weight-only fake quant and save model
+**OpenVLA W8A16:**
 
 ```bash
-python openvla/qvla/inject_fake_w.py \
-  --pretrained_checkpoint path/to/openvla_checkpoint \
-  --gates_path out/greedy_bits.json \
-  --out_dir out/openvla_qvla_fakew
+CUDA_VISIBLE_DEVICES=0 "$OPENVLA_PYTHON" scripts/run_qvla.py \
+  --backend openvla --checkpoint "$QVLA_ROOT/models/openvla_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 8 \
+  --max-samples 512 --trials 50 \
+  --output-root "$QVLA_ROOT/out/openvla_w8" --action run
 ```
 
-### 4) Evaluate on LIBERO
-
-Set `LIBERO_ROOT` to your local LIBERO checkout if needed.
+**OpenVLA-OFT W4A16:**
 
 ```bash
-export LIBERO_ROOT=path/to/LIBERO
-
-python openvla/qvla/run_eval_with_qvla_fakew.py \
-  --pretrained_checkpoint path/to/openvla_checkpoint \
-  --gates_path out/greedy_bits.json \
-  --task_suite_name libero_spatial \
-  --num_trials_per_task 1 \
-  --local_log_dir out/rollouts_qvla
+CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
+  --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 4 \
+  --max-samples 512 --trials 50 \
+  --output-root "$QVLA_ROOT/out/oft_w4" --action run
 ```
 
-## 📦 Outputs
+**OpenVLA-OFT W8A16:**
 
-- `out/proxy.pt`: per-layer `proxy_{b}` tensors
-- `out/greedy_bits.json`: channel-wise gate assignment
-- `out/openvla_qvla_fakew/`: exported fake-quantized checkpoint
-- `out/rollouts_qvla/`: evaluation logs
+```bash
+CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
+  --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
+  --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
+  --task_suite_name libero_spatial --target-avg-bits 8 \
+  --max-samples 512 --trials 50 \
+  --output-root "$QVLA_ROOT/out/oft_w8" --action run
+```
 
+`--trials 1` gives 10 episodes, `--trials 10` gives 100, and `--trials 50` gives
+500. Only the last is the full Spatial protocol documented here. Do not compare
+success rates from different episode counts as the same experiment.
+
+## 📦 Read and verify the result
+
+For example, after the OFT W8 run:
+
+```bash
+"$OFT_PYTHON" scripts/run_qvla.py --backend openvla-oft \
+  --action result --output-root "$QVLA_ROOT/out/oft_w8"
+"$OFT_PYTHON" openvla-oft/qvla/verify_eval.py \
+  --run_dir "$QVLA_ROOT/out/oft_w8/logs/eval"
+```
+
+`merged_summary.json` reports `total_episodes`, `total_successes` and
+`total_success_rate` (a fraction, multiplied by 100 for percent). A full Spatial
+run must contain **500 episodes**, and independent log verification must report
+`status: passed`. Use the matching backend/output directory for the other runs.
+Runtime exceptions or incomplete logs are not valid SR measurements. See
+[result verification](docs/weight_only.md#verify-the-result) and
+[staged runs/exact input selection](docs/weight_only.md#staged-runs-and-exact-input-selection).
+
+Calibration records, scores and assignments live under `calib/`, `proxy/` and
+`gates/`; per-run metadata/logs/videos live under `logs/eval/`. Stage manifests
+reject stale artifacts. Optional export writes a full BF16 fake-weight checkpoint.
+The workflow uses BF16 activations/operators and does not provide packed integer
+speedups. Method definitions and unreproduced paper stages are stated in the
+[recipe/scope guide](docs/weight_only.md#recipes).
+
+This update includes code and configuration only. Current experiment results,
+weights, datasets, calibration records, scores, gates, logs and videos are not
+bundled. The headline paper results above retain their original paper context;
+these instructions reproduce the released workflow rather than guarantee every
+paper SR. Separate CPU test environments cover both backends and the stage runner.
 
 ## 📚 Citation
 

@@ -165,6 +165,34 @@ def get_vla_action(vla, processor, base_vla_name, obs, task_label, unnorm_key, c
     # Process inputs.
     inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
 
+    if "input_ids" in inputs and not torch.all(inputs["input_ids"][:, -1] == 29871):
+        input_ids = inputs["input_ids"]
+        inputs["input_ids"] = torch.cat(
+            (
+                input_ids,
+                torch.full(
+                    (input_ids.shape[0], 1),
+                    29871,
+                    dtype=input_ids.dtype,
+                    device=input_ids.device,
+                ),
+            ),
+            dim=1,
+        )
+        if "attention_mask" in inputs and inputs["attention_mask"] is not None:
+            attention_mask = inputs["attention_mask"]
+            inputs["attention_mask"] = torch.cat(
+                (
+                    attention_mask,
+                    torch.ones(
+                        (attention_mask.shape[0], 1),
+                        dtype=attention_mask.dtype,
+                        device=attention_mask.device,
+                    ),
+                ),
+                dim=1,
+            )
+
     # Get action.
     action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
     return action
