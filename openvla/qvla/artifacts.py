@@ -3,8 +3,18 @@
 import hashlib
 import json
 import os
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def resolve_seed(seed=None):
+    """Generate a run seed when omitted; retain explicit seeds for optional replay."""
+    if seed is None:
+        return secrets.randbits(32)
+    if type(seed) is not int or not 0 <= seed < 2**32:
+        raise ValueError("seed must be an integer in [0, 2**32)")
+    return seed
 
 
 def now():

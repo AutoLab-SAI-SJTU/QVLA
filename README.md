@@ -95,18 +95,19 @@ order and show all four full-evaluation configurations.
 
 ### 1. Fetch this implementation
 
-These scripts are currently delivered in [PR #9](https://github.com/AutoLab-SAI-SJTU/QVLA/pull/9).
-Until it is merged, fetching only `main` gives the earlier implementation:
+Clone the `main` branch:
 
 ```bash
 git clone https://github.com/AutoLab-SAI-SJTU/QVLA.git
 cd QVLA
-git fetch origin pull/9/head
-git checkout --detach FETCH_HEAD
 export QVLA_ROOT="$PWD"
 export OPENVLA_PYTHON="$QVLA_ROOT/.venv-openvla/bin/python"
 export OFT_PYTHON="$QVLA_ROOT/.venv-oft/bin/python"
 ```
+
+No seed is fixed by default. A new output root gets a random seed recorded in
+`.qvla_seed.json`; later stages reuse that seed. Optional `--seed N` permits
+replaying a run with its recorded seed.
 
 ### 2. Install the selected backend and LIBERO
 
@@ -147,7 +148,8 @@ Its ten episodes are a startup check, not a full Spatial SR measurement.
 
 Run the selected configuration from the repository root, in the same shell as
 the setup variables. Each command uses one visible GPU, 512 training calibration
-trajectories, the Spatial suite, 50 trials per task and seed 7. The default
+trajectories, the Spatial suite, 50 trials per task and an automatically generated
+run seed. The default
 attention, pruning cap and OpenVLA W8 repair settings are selected automatically.
 Use a fresh output root for each run.
 
@@ -158,7 +160,7 @@ CUDA_VISIBLE_DEVICES=0 "$OPENVLA_PYTHON" scripts/run_qvla.py \
   --backend openvla --checkpoint "$QVLA_ROOT/models/openvla_spatial" \
   --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
   --task_suite_name libero_spatial --target-avg-bits 4 \
-  --max-samples 512 --trials 50 --seed 7 \
+  --max-samples 512 --trials 50 \
   --output-root "$QVLA_ROOT/out/openvla_w4" --action run
 ```
 
@@ -169,7 +171,7 @@ CUDA_VISIBLE_DEVICES=0 "$OPENVLA_PYTHON" scripts/run_qvla.py \
   --backend openvla --checkpoint "$QVLA_ROOT/models/openvla_spatial" \
   --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
   --task_suite_name libero_spatial --target-avg-bits 8 \
-  --max-samples 512 --trials 50 --seed 7 \
+  --max-samples 512 --trials 50 \
   --output-root "$QVLA_ROOT/out/openvla_w8" --action run
 ```
 
@@ -180,7 +182,7 @@ CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
   --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
   --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
   --task_suite_name libero_spatial --target-avg-bits 4 \
-  --max-samples 512 --trials 50 --seed 7 \
+  --max-samples 512 --trials 50 \
   --output-root "$QVLA_ROOT/out/oft_w4" --action run
 ```
 
@@ -191,7 +193,7 @@ CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
   --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
   --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
   --task_suite_name libero_spatial --target-avg-bits 8 \
-  --max-samples 512 --trials 50 --seed 7 \
+  --max-samples 512 --trials 50 \
   --output-root "$QVLA_ROOT/out/oft_w8" --action run
 ```
 

@@ -12,14 +12,11 @@ backend, set up LIBERO, download checkpoints/training data, run a startup check,
 then launch the full Spatial evaluation and verify its output. All shell blocks
 below run from the repository root unless a working directory is stated.
 
-This implementation is currently delivered through [PR #9](https://github.com/AutoLab-SAI-SJTU/QVLA/pull/9).
-Until it is merged, cloning only `main` does not include these scripts:
+Clone the `main` branch:
 
 ```bash
 git clone https://github.com/AutoLab-SAI-SJTU/QVLA.git
 cd QVLA
-git fetch origin pull/9/head
-git checkout --detach FETCH_HEAD
 export QVLA_ROOT="$PWD"
 export OPENVLA_PYTHON="$QVLA_ROOT/.venv-openvla/bin/python"
 export OFT_PYTHON="$QVLA_ROOT/.venv-oft/bin/python"
@@ -229,7 +226,7 @@ CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
   --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
   --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
   --task_suite_name libero_spatial --target-avg-bits 8 \
-  --max-samples 8 --trials 1 --seed 7 \
+  --max-samples 8 --trials 1 \
   --output-root "$QVLA_ROOT/out/oft_startup" --action run
 ```
 
@@ -241,7 +238,8 @@ If you reuse this example, select a fresh directory instead of overwriting a run
 
 Choose one visible GPU. Run the configuration(s) you need; the commands below
 are sequential, with a separate output directory for each. They fix the suite,
-512 training trajectories, 50 trials per task and seed 7. The launcher selects
+512 training trajectories, 50 trials per task and an automatically generated run
+seed. The launcher selects
 the attention and pruning-repair recipe from the table automatically.
 
 **OpenVLA W4A16:**
@@ -251,7 +249,7 @@ CUDA_VISIBLE_DEVICES=0 "$OPENVLA_PYTHON" scripts/run_qvla.py \
   --backend openvla --checkpoint "$QVLA_ROOT/models/openvla_spatial" \
   --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
   --task_suite_name libero_spatial --target-avg-bits 4 \
-  --max-samples 512 --trials 50 --seed 7 \
+  --max-samples 512 --trials 50 \
   --output-root "$QVLA_ROOT/out/openvla_w4" --action run
 ```
 
@@ -262,7 +260,7 @@ CUDA_VISIBLE_DEVICES=0 "$OPENVLA_PYTHON" scripts/run_qvla.py \
   --backend openvla --checkpoint "$QVLA_ROOT/models/openvla_spatial" \
   --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
   --task_suite_name libero_spatial --target-avg-bits 8 \
-  --max-samples 512 --trials 50 --seed 7 \
+  --max-samples 512 --trials 50 \
   --output-root "$QVLA_ROOT/out/openvla_w8" --action run
 ```
 
@@ -273,7 +271,7 @@ CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
   --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
   --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
   --task_suite_name libero_spatial --target-avg-bits 4 \
-  --max-samples 512 --trials 50 --seed 7 \
+  --max-samples 512 --trials 50 \
   --output-root "$QVLA_ROOT/out/oft_w4" --action run
 ```
 
@@ -284,7 +282,7 @@ CUDA_VISIBLE_DEVICES=0 "$OFT_PYTHON" scripts/run_qvla.py \
   --backend openvla-oft --checkpoint "$QVLA_ROOT/models/oft_spatial" \
   --rlds-root "$QVLA_ROOT/data/modified_libero_rlds" \
   --task_suite_name libero_spatial --target-avg-bits 8 \
-  --max-samples 512 --trials 50 --seed 7 \
+  --max-samples 512 --trials 50 \
   --output-root "$QVLA_ROOT/out/oft_w8" --action run
 ```
 
@@ -313,6 +311,15 @@ No expected SR numbers or local experiment outputs are bundled with this update.
 
 ## Staged runs and exact input selection
 
+A fresh output root gets a random 32-bit seed; there is no fixed default. The
+runner saves it in `.qvla_seed.json` and passes it to calibration sampling,
+action projections and evaluation. Separate invocations using the same output
+root reuse it, so stage caches and run metadata stay consistent. New output
+roots generate new seeds. Optional `--seed N` chooses an explicit replay seed;
+changing an existing run's seed requires a new output root. `plan` is read-only
+and reports a null seed until one is provided or recorded. Direct backend
+commands also generate and record a seed when omitted, per invocation.
+
 `--action plan` prints the resolved recipe without loading a model or creating an
 output root. Keep your selected command's other arguments and replace `run` with
 `build_calib`, `proxy`, `assign`, `eval` or `export` to execute one stage. For a
@@ -323,7 +330,7 @@ output root. `--attention` and `--calibration-attention` select explicit attenti
 OFT requires bidirectional SDPA. The old input-Hessian `--max_layers`, `--resume`
 and `--percdamp` flags are rejected.
 
-The seeded default sampler recreates this release's training selection. To
+The default sampler uses each run's generated seed for training selection. To
 reproduce another run's exact frame list, add `--calib-indices /path/to/indices.jsonl`
 and set `--max-samples` to that list's length before preparation. Required fields
 are `suite`, `episode_index` and `step_index`; an optional instruction is checked.

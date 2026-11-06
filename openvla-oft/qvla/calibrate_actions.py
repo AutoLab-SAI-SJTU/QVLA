@@ -11,7 +11,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from qvla.action_scores import directional_score, variance_jacobian_score
-from qvla.artifacts import file_hash, now, protected_hashes, source_hashes, tensor_hash, write_json
+from qvla.artifacts import file_hash, now, protected_hashes, resolve_seed, source_hashes, tensor_hash, write_json
 from qvla.runtime import (
     bootstrap,
     configure_cuda,
@@ -26,6 +26,7 @@ from qvla.runtime import (
 
 
 def calibrate(args):
+    args.seed = resolve_seed(args.seed)
     import numpy as np
     import torch
     from torch.nn import functional as F
@@ -276,7 +277,7 @@ def main():
     parser.add_argument("--out_dir", type=Path, required=True)
     parser.add_argument("--libero_root", default=os.environ.get("LIBERO_ROOT"))
     parser.add_argument("--task_suite_name", default="libero_spatial")
-    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--seed", type=int, help="Optional seed; generated and recorded when omitted")
     parser.add_argument("--max_samples", type=int, help="Use a prefix for explicit smoke checks")
     parser.add_argument("--reference_checks", type=int, default=8)
     parser.add_argument("--save_every", type=int, default=16)

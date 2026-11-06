@@ -61,6 +61,7 @@ def test_plan_defaults_for_each_weight_only_route(
     plan = json.loads(result.stdout)
     assert plan["bits"] == "0,4,8,16" and plan["samples"] == 512
     assert plan["target_avg_bits"] == bits and plan["attention"] == attention
+    assert plan["seed"] is None and plan["seed_policy"] == "random_per_run"
     assert (
         plan["calibration_attention"] == "sdpa"
         and plan["restore_pruned_fraction"] == repair
@@ -140,3 +141,30 @@ def test_proxy_filename_contract_fails_before_loading_a_model(tmp_path):
     )
     assert result.returncode != 0 and "Calibration writes proxy.pt" in result.stderr
     assert not (tmp_path / "run").exists()
+
+
+def test_random_seed_is_per_run_and_reused_across_stages(tmp_path, monkeypatch):
+    seeds = iter([123, 456])
+    monkeypatch.setattr(pipeline.secrets, "randbits", lambda bits: next(seeds))
+    first, second = tmp_path / "first", tmp_path / "second"
+    assert pipeline.resolve_run_seed(first) == 123
+    assert pipeline.resolve_run_seed(first) == 123
+    assert pipeline.resolve_run_seed(second) == 456
+    assert json.loads((first / ".qvla_seed.json").read_text())["selection"] == "random"
+
+
+def test_explicit_seed_replay_and_conflict_rejection(tmp_path):
+    assert pipeline.resolve_run_seed(tmp_path, 19) == 19
+    assert pipeline.resolve_run_seed(tmp_path) == 19
+    with pytest.raises(ValueError, match="fresh output directory"):
+        pipeline.resolve_run_seed(tmp_path, 20)
+    assert pipeline.resolve_run_seed(tmp_path) == 19
+
+
+def test_seed_planning_is_read_only(tmp_path):
+    output = tmp_path / "run"
+    assert pipeline.resolve_run_seed(output, persist=False) is None
+    assert pipeline.resolve_run_seed(output, 19, persist=False) == 19
+    assert not output.exists()
+    pipeline.resolve_run_seed(output, 23)
+    assert pipeline.resolve_run_seed(output, persist=False) == 23

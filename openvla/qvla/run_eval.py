@@ -9,7 +9,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from qvla.artifacts import file_hash, now, protected_hashes, source_hashes, write_json
+from qvla.artifacts import file_hash, now, protected_hashes, resolve_seed, source_hashes, write_json
 from qvla.evaluation_logs import parse_evaluation
 from qvla.quantization import apply_gates, load_gates
 from qvla.runtime import configure_cuda, load_model, load_processor
@@ -24,7 +24,7 @@ def main():
     p.add_argument("--local_log_dir", type=Path, required=True)
     p.add_argument("--task_suite_name", default="libero_spatial")
     p.add_argument("--num_trials_per_task", type=int, default=50)
-    p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--seed", type=int, help="Optional seed; generated and recorded when omitted")
     p.add_argument("--num_steps_wait", type=int, default=10)
     p.add_argument("--run_id_note", default="openvla_qvla")
     p.add_argument("--memory_fraction", type=float, default=0.42)
@@ -32,6 +32,7 @@ def main():
     p.add_argument("--attention", choices=["eager", "sdpa", "flash_attention_2"], default="sdpa")
     p.add_argument("--flash_attn_path")
     args = p.parse_args()
+    args.seed = resolve_seed(args.seed)
     if not 1 <= args.num_trials_per_task <= 50 or args.num_steps_wait < 0:
         p.error("Invalid trial/wait count")
     import torch

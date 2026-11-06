@@ -10,7 +10,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from qvla.artifacts import file_hash, now, protected_hashes, source_hashes, write_json
+from qvla.artifacts import file_hash, now, protected_hashes, resolve_seed, source_hashes, write_json
 from qvla.evaluation_logs import parse_evaluation
 from qvla.runtime import (
     bootstrap,
@@ -24,6 +24,7 @@ from qvla.runtime import (
 
 
 def evaluate(args):
+    args.seed = resolve_seed(args.seed)
     import torch
 
     from qvla.quantization import apply_gates, load_gates
@@ -157,7 +158,7 @@ def main():
     parser.add_argument("--num_trials_per_task", type=int, default=50)
     parser.add_argument("--local_log_dir", type=Path, required=True)
     parser.add_argument("--libero_root", default=os.environ.get("LIBERO_ROOT"))
-    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--seed", type=int, help="Optional seed; generated and recorded when omitted")
     parser.add_argument("--num_steps_wait", type=int, default=10)
     parser.add_argument("--run_id_note")
     parser.add_argument("--memory_fraction", type=float, default=0.42)

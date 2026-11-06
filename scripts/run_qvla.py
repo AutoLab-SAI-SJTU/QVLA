@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import importlib.metadata
 import importlib.util
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -35,6 +37,38 @@ def write(path, value):
     temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
     temporary.write_text(json.dumps(value, indent=2) + "\n")
     temporary.replace(path)
+
+
+def resolve_run_seed(output_root, seed=None, persist=True):
+    """Choose a fresh random seed per output root and reuse it across stages."""
+    if seed is not None and (type(seed) is not int or not 0 <= seed < 2**32):
+        raise ValueError("seed must be an integer in [0, 2**32)")
+    output_root = Path(output_root)
+    record = output_root / ".qvla_seed.json"
+
+    def recorded():
+        value = json.loads(record.read_text())["seed"]
+        if type(value) is not int or not 0 <= value < 2**32:
+            raise ValueError("Invalid recorded run seed")
+        if seed is not None and seed != value:
+            raise ValueError(
+                "Run seed differs from this output root; use a fresh output directory"
+            )
+        return value
+
+    if not persist:
+        return recorded() if record.exists() else seed
+    output_root.mkdir(parents=True, exist_ok=True)
+    with (output_root / ".qvla_seed.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if record.exists():
+            return recorded()
+        value = secrets.randbits(32) if seed is None else seed
+        write(
+            record,
+            {"seed": value, "selection": "random" if seed is None else "explicit"},
+        )
+        return value
 
 
 @lru_cache(maxsize=None)
@@ -219,6 +253,12 @@ def run(args):
     args.export_dir = (
         (args.export_dir or args.output_root / "export/fakew").expanduser().resolve()
     )
+    if args.stage == "result":
+        print((args.output_root / "merged_summary.json").read_text())
+        return
+    args.seed = resolve_run_seed(
+        args.output_root, args.seed, persist=args.stage != "plan"
+    )
     if args.stage == "plan":
         print(
             json.dumps(
@@ -233,15 +273,16 @@ def run(args):
                     "calibration_attention": args.calibration_attention,
                     "restore_pruned_fraction": args.restore_pruned_fraction,
                     "trials_per_task": args.trials,
+                    "seed": args.seed,
+                    "seed_policy": "random_per_run"
+                    if args.seed is None
+                    else "explicit_or_recorded",
                     "data_root": str(args.data_root),
                     "output_root": str(args.output_root),
                 },
                 indent=2,
             )
         )
-        return
-    if args.stage == "result":
-        print((args.output_root / "merged_summary.json").read_text())
         return
     args.output_root.mkdir(parents=True, exist_ok=True)
     sources = source_identity(args.backend_root)
@@ -616,7 +657,11 @@ def main(argv=None):
     parser.add_argument(
         "--max-prune-ratio", "--max_prune_ratio", type=float, default=0.01
     )
-    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        help="Optional seed; otherwise generate and record one per output root",
+    )
     parser.add_argument(
         "--libero_root", "--libero-root", default=os.environ.get("LIBERO_ROOT")
     )

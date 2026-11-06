@@ -13,7 +13,7 @@ from torch.nn import functional as F
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from qvla.artifacts import file_hash, now, protected_hashes, source_hashes, write_json
+from qvla.artifacts import file_hash, now, protected_hashes, resolve_seed, source_hashes, write_json
 from qvla.quantization import SUPPORTED_BITS, quantize_rows, target_modules
 from qvla.runtime import configure_cuda, load_model, load_processor, load_records
 
@@ -29,7 +29,7 @@ def main():
     p.add_argument("--calib_jsonl", type=Path, required=True)
     p.add_argument("--out_dir", type=Path, required=True)
     p.add_argument("--max_samples", type=int, default=512)
-    p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--seed", type=int, help="Optional seed; generated and recorded when omitted")
     p.add_argument("--temperature", type=float, default=1.0)
     p.add_argument("--task_suite_name", default="libero_spatial")
     p.add_argument("--memory_fraction", type=float, default=0.55)
@@ -37,6 +37,7 @@ def main():
     p.add_argument("--attention", default="sdpa", choices=["eager", "sdpa", "flash_attention_2"])
     p.add_argument("--flash_attn_path")
     args = p.parse_args()
+    args.seed = resolve_seed(args.seed)
     if args.temperature <= 0 or not math.isfinite(args.temperature):
         p.error("temperature must be finite and positive")
     rows = load_records(args.calib_jsonl, args.max_samples)

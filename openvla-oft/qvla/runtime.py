@@ -10,7 +10,7 @@ import types
 from contextlib import contextmanager
 from pathlib import Path
 
-from qvla.artifacts import file_hash
+from qvla.artifacts import file_hash, resolve_seed
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -128,7 +128,7 @@ def stage_checkpoint(checkpoint, destination):
     return destination
 
 
-def make_config(checkpoint, suite="libero_spatial", seed=7, trials=50, log_dir=None):
+def make_config(checkpoint, suite="libero_spatial", seed=None, trials=50, log_dir=None):
     from experiments.robot.libero.run_libero_eval import GenerateConfig
 
     return GenerateConfig(
@@ -141,7 +141,7 @@ def make_config(checkpoint, suite="libero_spatial", seed=7, trials=50, log_dir=N
         use_proprio=True,
         center_crop=True,
         num_open_loop_steps=8,
-        seed=seed,
+        seed=resolve_seed(seed),
         num_trials_per_task=trials,
         local_log_dir=str(log_dir or "out/qvla_eval"),
         use_wandb=False,

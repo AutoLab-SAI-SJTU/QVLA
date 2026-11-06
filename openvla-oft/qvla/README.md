@@ -130,7 +130,7 @@ does not modify your downloaded checkpoint.
 python -m qvla.prepare_calibration \
   --data_root data/modified_libero_rlds \
   --out_dir out/calibration \
-  --trajectories 512 --suites spatial,object,goal,10 --seed 7
+  --trajectories 512 --suites spatial,object,goal,10
 ```
 
 This samples one random frame from each of 512 distinct training trajectories,
@@ -153,7 +153,7 @@ GPU; leave additional free memory for other users of a shared machine.
 CUDA_VISIBLE_DEVICES=0 python -m qvla.calibrate_actions \
   --pretrained_checkpoint models/libero_spatial \
   --calib_jsonl out/calibration/records.jsonl \
-  --out_dir out/action_sensitivity --seed 7
+  --out_dir out/action_sensitivity
 
 python -m qvla.assign_gates_from_sensitivity \
   --proxy_pt out/action_sensitivity/proxy.pt \
@@ -178,7 +178,7 @@ is no longer the OFT calibration implementation.
 ## Evaluate Spatial
 
 Run W4A16 and W8A16 in sequence, or choose distinct GPUs if running in parallel.
-Each default evaluation runs 10 tasks × 50 trials with seed 7, two cameras,
+Each default evaluation runs 10 tasks × 50 trials with an automatically generated seed, two cameras,
 proprio, center crop and eight open-loop actions. The inference memory fraction
 defaults to 42% and can be configured with `--memory_fraction`.
 These fractions reflect shared-GPU defaults; raise them explicitly when using
@@ -188,12 +188,12 @@ a smaller dedicated GPU if the model does not fit within the selected fraction.
 CUDA_VISIBLE_DEVICES=0 python -m qvla.run_eval \
   --pretrained_checkpoint models/libero_spatial \
   --gates_path out/gates_w4.json --task_suite_name libero_spatial \
-  --num_trials_per_task 50 --seed 7 --local_log_dir out/w4a16
+  --num_trials_per_task 50 --local_log_dir out/w4a16
 
 CUDA_VISIBLE_DEVICES=0 python -m qvla.run_eval \
   --pretrained_checkpoint models/libero_spatial \
   --gates_path out/gates_w8.json --task_suite_name libero_spatial \
-  --num_trials_per_task 50 --seed 7 --local_log_dir out/w8a16
+  --num_trials_per_task 50 --local_log_dir out/w8a16
 
 python -m qvla.verify_eval --run_dir out/w4a16
 python -m qvla.verify_eval --run_dir out/w8a16

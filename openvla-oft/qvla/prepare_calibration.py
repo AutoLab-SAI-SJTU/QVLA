@@ -9,10 +9,11 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from qvla.artifacts import file_hash, now, write_json
+from qvla.artifacts import file_hash, now, resolve_seed, write_json
 
 
 def prepare(args):
+    args.seed = resolve_seed(args.seed)
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     os.environ.setdefault("TF_NUM_INTRAOP_THREADS", "2")
     os.environ.setdefault("TF_NUM_INTEROP_THREADS", "2")
@@ -154,7 +155,7 @@ def main():
     parser.add_argument("--out_dir", type=Path, required=True)
     parser.add_argument("--trajectories", type=int, default=512)
     parser.add_argument("--suites", default="spatial,object,goal,10")
-    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--seed", type=int, help="Optional seed; generated and recorded when omitted")
     parser.add_argument("--manifest_name", default="records.jsonl")
     parser.add_argument("--indices_jsonl", type=Path, help="Reuse local suite/episode/frame indices in this order")
     args = parser.parse_args()

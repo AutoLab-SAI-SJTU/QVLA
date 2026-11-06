@@ -16,11 +16,11 @@ Direct-file commands from the repository root are also supported:
 ```bash
 python openvla/qvla/prepare_calibration.py \
   --data_root /path/to/modified_libero_rlds \
-  --out_dir out/calib --trajectories 512 --seed 7
+  --out_dir out/calib --trajectories 512
 
 CUDA_VISIBLE_DEVICES=0 python openvla/qvla/calibrate_actions.py \
   --pretrained_checkpoint /path/to/merged_checkpoint \
-  --calib_jsonl out/calib/records.jsonl --out_dir out/proxy --seed 7
+  --calib_jsonl out/calib/records.jsonl --out_dir out/proxy
 
 python openvla/qvla/assign_gates_from_sensitivity.py \
   --proxy_pt out/proxy/proxy.pt --bits 0,4,8,16 --target_avg_bits 8 \
@@ -31,7 +31,7 @@ CUDA_VISIBLE_DEVICES=0 python openvla/qvla/run_eval.py \
   --pretrained_checkpoint /path/to/merged_checkpoint \
   --gates_path out/gates_w8.json --attention flash_attention_2 \
   --task_suite_name libero_spatial --num_trials_per_task 50 \
-  --local_log_dir out/eval_w8 --seed 7
+  --local_log_dir out/eval_w8
 
 python openvla/qvla/verify_eval.py --run_dir out/eval_w8
 ```
